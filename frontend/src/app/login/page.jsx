@@ -3,9 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api } from "@/lib/api"; //error solved
+import { api } from "@/lib/api"; 
 
-//start of login for testing git
 export default function Login() {
     const router = useRouter();
 
