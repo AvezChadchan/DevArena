@@ -8,7 +8,6 @@ import { usePathname } from "next/navigation";
 export default function Sidebar() {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
-  console.log("Sidebar auth:", { user, loading });
 
   return (
     <aside className="w-72 h-screen bg-[#0f1a0d] border-r border-white/5 flex flex-col justify-between px-6 py-8">
@@ -35,20 +34,20 @@ export default function Sidebar() {
           <NavItem
             icon={<Code2 size={18} />}
             label="Problems"
-            href="/problems"
-            active={pathname.startsWith("/problems")}
+            href="/dashboard/problems"
+            active={pathname.startsWith("/dashboard/problems")}
           />
           <NavItem
             icon={<Trophy size={18} />}
             label="Contests"
-            href="/contests"
-            active={pathname.startsWith("/contests")}
+            href="/dashboard/contests"
+            active={pathname.startsWith("/dashboard/contests")}
           />
           <NavItem
             icon={<BarChart3 size={18} />}
             label="Leaderboard"
-            href="/leaderboard"
-            active={pathname === "/leaderboard"}
+            href="/dashboard/leaderboard"
+            active={pathname === "/dashboard/leaderboard"}
           />
         </nav>
       </div>
@@ -69,7 +68,11 @@ export default function Sidebar() {
           </div>
         </div>
         <div>
-          <NavItem icon={<User size={18} />} label="Profile" href="/profile" />
+          <NavItem
+            icon={<User size={18} />}
+            label="Profile"
+            href="/dashboard/profile"
+          />
           <NavItem
             icon={<LogOut size={18} />}
             label="Logout"
@@ -85,7 +88,17 @@ export default function Sidebar() {
 function NavItem({ icon, label, href, active, danger, onClick }) {
   if (onClick) {
     return (
-      <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition${danger ? "text-red-400 hover:bg-red-500/10" : "text-slate-300 hover:bg-white/5"}`}>{icon}{label}</button>
+      <button
+        onClick={onClick}
+        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${
+          danger
+            ? "text-red-400 hover:bg-red-500/10"
+            : "text-slate-300 hover:bg-white/5"
+        }`}
+      >
+        {icon}
+        {label}
+      </button>
     );
   }
   return (

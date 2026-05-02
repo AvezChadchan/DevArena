@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api } from "@/lib/api"; 
+import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Login() {
     const router = useRouter();
+    const { login } = useAuth();
 
-    const [username, setUsername] = useState("");
-    const [email, setEmail] = useState("");
+    const [identifier, setIdentifier] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
@@ -21,10 +22,13 @@ export default function Login() {
 
         try {
             const res = await api.post("/auth/login", {
-                username, email, password
-            })
-
-            console.log("Logged in user:", res.data);
+                identifier, password
+            });
+            const data = res?.data?.data || {};
+            login(data.user || null, {
+                accessToken: data.accessToken,
+                refreshToken: data.refreshToken,
+            });
 
             router.push("/dashboard");
         } catch (err) {
@@ -44,9 +48,9 @@ export default function Login() {
             <header className="relative z-10 flex justify-between px-6 sm:px-10 py-5 sm:py-6">
                 <h2 className="font-extrabold text-xl sm:text-2xl">DevArena</h2>
                 <span className="text-sm text-slate-400">
-                    Don’t have an account?{" "}
+                    Don't have an account?{" "}
                     <Link href="/register">
-                        <span className="text-primary cursor-pointer hover:underline" >Sign Up</span>
+                        <span className="text-primary cursor-pointer hover:underline">Sign Up</span>
                     </Link>
                 </span>
             </header>
@@ -87,28 +91,15 @@ export default function Login() {
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div>
-                            <label className="text-sm text-slate-300">Username</label>
+                            <label className="text-sm text-slate-300">Email or Username</label>
                             <input
                                 type="text"
                                 className="w-full mt-1 h-12 px-4 rounded-xl bg-[#1e2329] border border-[#2d372a] focus:border-primary focus:outline-none transition"
-                                value={username}
-                                onChange={(e) => {
-                                    setUsername(e.target.value); setError("")
-                                }}
+                                value={identifier}
+                                onChange={(e) => { setIdentifier(e.target.value); setError(""); }}
                                 required
-                                placeholder="coder"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="text-sm text-slate-300">Email</label>
-                            <input
-                                type="email"
-                                className="w-full mt-1 h-12 px-4 rounded-xl bg-[#1e2329] border border-[#2d372a] focus:border-primary focus:outline-none transition"
-                                value={email}
-                                onChange={(e) => { setEmail(e.target.value); setError("") }}
-                                required
-                                placeholder="code@devarena.com"
+                                autoComplete="username"
+                                placeholder="coder or code@devarena.com"
                             />
                         </div>
 
@@ -120,6 +111,7 @@ export default function Login() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
+                                autoComplete="current-password"
                                 placeholder="••••••••"
                             />
                         </div>

@@ -30,7 +30,8 @@ export default function Register() {
                 fullname,
                 username,
                 email,
-                password
+                password,
+                role: "user",
             });
             console.log("Registered:", res.data);
             router.push("/login");
