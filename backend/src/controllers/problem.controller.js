@@ -1,6 +1,7 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { apiError } from "../utils/apiError.js";
 import { Problem } from "../models/problem.model.js";
+import { Contest } from "../models/contest.model.js";
 import { apiResponse } from "../utils/apiResponse.js";
 
 const addProblem = asyncHandler(async (req, res) => {
@@ -59,6 +60,60 @@ const getAllProblems = asyncHandler(async (req, res) => {
     .json(new apiResponse(200, problems, "Problems Fetched"));
 });
 
+const getProblemCatalog = asyncHandler(async (req, res) => {
+  const [problems, contests] = await Promise.all([
+    Problem.find({}).sort({ createdAt: -1 }),
+    Contest.find({}).select("name level problems"),
+  ]);
+
+  const contestMap = new Map();
+
+  contests.forEach((contest) => {
+    contest.problems.forEach((problemId) => {
+      const key = String(problemId);
+      const linkedContests = contestMap.get(key) || [];
+
+      linkedContests.push({
+        id: contest._id,
+        name: contest.name,
+        level: contest.level,
+      });
+
+      contestMap.set(key, linkedContests);
+    });
+  });
+
+  const standaloneProblems = [];
+  const contestProblems = [];
+
+  problems.forEach((problem) => {
+    const linkedContests = contestMap.get(String(problem._id)) || [];
+    const enrichedProblem = {
+      ...problem.toObject(),
+      contests: linkedContests,
+      inContest: linkedContests.length > 0,
+    };
+
+    if (linkedContests.length > 0) {
+      contestProblems.push(enrichedProblem);
+      return;
+    }
+
+    standaloneProblems.push(enrichedProblem);
+  });
+
+  return res.status(200).json(
+    new apiResponse(
+      200,
+      {
+        standaloneProblems,
+        contestProblems,
+      },
+      "Problem catalog fetched"
+    )
+  );
+});
+
 const getProblemById = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const problem = await Problem.findById(id);
@@ -112,6 +167,7 @@ const deleteProblem = asyncHandler(async (req, res) => {
 export {
   addProblem,
   getAllProblems,
+  getProblemCatalog,
   getProblemById,
   updateProblem,
   deleteProblem,

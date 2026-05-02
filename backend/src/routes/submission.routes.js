@@ -13,6 +13,6 @@ router.route("/submit-code").post(verifyJWT, submitCode);
 
 router.route("/get-user-submissions").get(verifyJWT, getUserSubmissions);
 
-router.route("/get-problem-submissions/:id").get(getProblemSubmissions);
+router.route("/get-problem-submissions/:id").get(verifyJWT,getProblemSubmissions);
 
 export default router;

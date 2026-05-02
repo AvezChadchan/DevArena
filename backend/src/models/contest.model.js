@@ -10,6 +10,12 @@ const contestSchema = new Schema(
       type: String,
       required: true,
     },
+    level: {
+      type: String,
+      enum: ["easy", "medium", "hard"],
+      required: true,
+      default: "easy",
+    },
     startTime: {
       type: Date,
       required: true,

@@ -9,7 +9,7 @@ export const verifyJWT = asyncHandler(async (req, _, next) => {
     const token = req.cookies?.accessToken || authHeader?.split(" ")[1];
 
     if (!token) {
-      throw new apiError(403, "Unauthorized Request");
+      throw new apiError(401, "Unauthorized Request");
     }
     const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
@@ -23,6 +23,6 @@ export const verifyJWT = asyncHandler(async (req, _, next) => {
     req.user = user;
     next();
   } catch (error) {
-    throw new apiError(404, error?.message || "Invalid Access Token");
+    throw new apiError(401, error?.message || "Invalid Access Token");
   }
 });

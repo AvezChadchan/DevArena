@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   addProblem,
   getAllProblems,
+  getProblemCatalog,
   updateProblem,
   deleteProblem,
   getProblemById,
@@ -16,8 +17,9 @@ router
   .post(verifyJWT, authorizeRoles("admin"), addProblem);
 
 router.route("/problem").get(getAllProblems);
+router.route("/catalog").get(getProblemCatalog);
 
-router.route("/problem/:id").get(verifyJWT, getProblemById);
+router.route("/problem/:id").get(getProblemById);
 router
   .route("/update-problem/:id")
   .put(verifyJWT, authorizeRoles("admin"), updateProblem);

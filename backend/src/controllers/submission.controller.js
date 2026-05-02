@@ -8,6 +8,8 @@ import { User } from "../models/user.model.js";
 import mongoose from "mongoose";
 import { Contest } from "../models/contest.model.js";
 
+const trimOutput = (value) => (value || "").toString().trim();
+
 const submitCode = asyncHandler(async (req, res) => {
   const { problemId, code, language, contestId } = req.body;
   if (
@@ -81,9 +83,13 @@ const submitCode = asyncHandler(async (req, res) => {
   const judgeUrl = `${process.env.JUDGE0_BASE || "https://judge0-ce.p.rapidapi.com"}/submissions?base64_encoded=false&wait=true`;
   const headers = {
     "Content-Type": "application/json",
-    "X-RapidAPI-Key": process.env.RAPID_API_KEY,
-    "X-RapidAPI-Host": process.env.JUDGE0_HOST || "judge0-ce.p.rapidapi.com",
   };
+
+  if (process.env.RAPID_API_KEY) {
+    headers["X-RapidAPI-Key"] = process.env.RAPID_API_KEY;
+    headers["X-RapidAPI-Host"] =
+      process.env.JUDGE0_HOST || "judge0-ce.p.rapidapi.com";
+  }
 
   let judgeData;
   try {
@@ -110,19 +116,20 @@ const submitCode = asyncHandler(async (req, res) => {
   }
 
   //getting response
-  const stdout = (judgeData.stdout || "").toString().trim();
+  const stdout = trimOutput(judgeData.stdout);
   const compileOutput = judgeData.compile_output || null;
   const stderr = judgeData.stderr || null;
-  const expected = (problem.sampleOutput || "").toString().trim();
+  const expected = trimOutput(problem.sampleOutput);
+  const judgeStatus = judgeData.status?.description || "Unknown";
 
-  let verdict = "Pending";
+  let verdict = judgeStatus;
   let pointsAwarded = 0;
 
   if (stdout === expected && !stderr && !compileOutput) {
     verdict = "Accepted";
     pointsAwarded = Number(problem.points) || 0;
   } else if (compileOutput) {
-    verdict = "Compile Output";
+    verdict = "Compilation Error";
   } else if (stderr) {
     verdict = "Runtime Error";
   } else {
@@ -140,6 +147,11 @@ const submitCode = asyncHandler(async (req, res) => {
     pointsAwarded,
   });
 
+  let scoreIncremented = false;
+  let updatedUser = await User.findById(req.user._id).select(
+    "-password -refreshToken"
+  );
+
   //update user score
   if (verdict === "Accepted" && pointsAwarded > 0) {
     try {
@@ -155,10 +167,12 @@ const submitCode = asyncHandler(async (req, res) => {
       });
 
       if (acceptedCount === 0) {
-        await User.updateOne(
+        updatedUser = await User.findByIdAndUpdate(
           { _id: userId },
-          { $inc: { score: pointsAwarded } }
-        );
+          { $inc: { score: pointsAwarded } },
+          { new: true }
+        ).select("-password -refreshToken");
+        scoreIncremented = true;
       } else {
         console.log(
           "User already had an Accepted submission before; not incrementing score"
@@ -175,12 +189,18 @@ const submitCode = asyncHandler(async (req, res) => {
       {
         submissionId: submission._id,
         verdict,
+        judgeStatus,
+        passed: verdict === "Accepted",
         output: stdout,
+        expectedOutput: expected,
         compileOutput: compileOutput
           ? String(compileOutput).slice(0, 2000)
           : null,
         stderr: stderr ? String(stderr).slice(0, 2000) : null,
         pointsAwarded,
+        scoreIncremented,
+        currentScore: updatedUser?.score ?? req.user?.score ?? 0,
+        user: updatedUser,
       },
       "Code evaluated"
     )
@@ -263,14 +283,12 @@ const getProblemSubmissions = asyncHandler(async (req, res) => {
     },
     {
       $project: {
-        code: 1,
         language: 1,
         verdict: 1,
         pointsAwarded: 1,
         createdAt: 1,
         "userDetails._id": 1,
         "userDetails.username": 1,
-        "userDetails.email": 1,
       },
     },
   ]);

@@ -3,19 +3,89 @@ import { apiError } from "../utils/apiError.js";
 import { apiResponse } from "../utils/apiResponse.js";
 import { Contest } from "../models/contest.model.js";
 import { User } from "../models/user.model.js";
+import { Problem } from "../models/problem.model.js";
 import mongoose from "mongoose";
 import { Submission } from "../models/submissions.model.js";
+
+const levelRules = {
+  easy: {
+    allowed: new Set(["easy"]),
+    message: "Easy contests can only contain easy problems",
+  },
+  medium: {
+    allowed: new Set(["easy", "medium"]),
+    message: "Medium contests can only contain easy or medium problems",
+  },
+  hard: {
+    allowed: new Set(["easy", "medium", "hard"]),
+    message: "Hard contests can contain problems of any difficulty",
+  },
+};
+
+const validateContestProblemsForLevel = (problems, level) => {
+  const normalizedLevel = String(level || "").toLowerCase();
+  const rule = levelRules[normalizedLevel];
+
+  if (!rule) {
+    throw new apiError(400, "Contest level must be easy, medium, or hard");
+  }
+
+  if (!Array.isArray(problems) || problems.length < 1) {
+    throw new apiError(400, "A contest must contain at least 1 problem");
+  }
+
+  const invalidProblem = problems.find(
+    (problem) => !rule.allowed.has(String(problem?.difficulty || "").toLowerCase())
+  );
+
+  if (invalidProblem) {
+    throw new apiError(400, rule.message);
+  }
+
+  if (
+    normalizedLevel === "medium" &&
+    !problems.some(
+      (problem) => String(problem?.difficulty || "").toLowerCase() === "medium"
+    )
+  ) {
+    throw new apiError(
+      400,
+      "A medium contest must contain at least one medium problem"
+    );
+  }
+
+  if (
+    normalizedLevel === "hard" &&
+    !problems.some(
+      (problem) => String(problem?.difficulty || "").toLowerCase() === "hard"
+    )
+  ) {
+    throw new apiError(400, "A hard contest must contain at least one hard problem");
+  }
+};
+
 const createContest = asyncHandler(async (req, res) => {
-  let { name, description, startTime, endTime, problems = [] } = req.body;
+  let {
+    name,
+    description,
+    level,
+    startTime,
+    endTime,
+    problems = [],
+  } = req.body;
+
+  if (!name || !description || !level || !startTime || !endTime) {
+    throw new apiError(
+      400,
+      "Name, description, level, startTime and endTime are required"
+    );
+  }
 
   startTime = new Date(startTime);
   endTime = new Date(endTime);
 
-  if (!name || !description || !startTime || !endTime) {
-    throw new apiError(
-      400,
-      "Name, description, startTime and endTime are required"
-    );
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    throw new apiError(400, "Start time and end time must be valid dates");
   }
 
   if (startTime >= endTime) {
@@ -26,12 +96,35 @@ const createContest = asyncHandler(async (req, res) => {
     throw new apiError(400, "Problems must be an array");
   }
 
+  const uniqueProblemIds = [...new Set(problems.map((problemId) => String(problemId)))];
+
+  const invalidProblemId = uniqueProblemIds.find(
+    (problemId) => !mongoose.Types.ObjectId.isValid(problemId)
+  );
+
+  if (invalidProblemId) {
+    throw new apiError(400, "Problems array contains an invalid problem id");
+  }
+
+  const contestProblems = await Problem.find({
+    _id: {
+      $in: uniqueProblemIds.map((problemId) => new mongoose.Types.ObjectId(problemId)),
+    },
+  }).select("difficulty");
+
+  if (contestProblems.length !== uniqueProblemIds.length) {
+    throw new apiError(400, "One or more selected problems do not exist");
+  }
+
+  validateContestProblemsForLevel(contestProblems, level);
+
   const contest = await Contest.create({
     name: name.toLowerCase(),
     description,
+    level: String(level).toLowerCase(),
     startTime,
     endTime,
-    problems,
+    problems: uniqueProblemIds,
     createdBy: req.user._id,
   });
 
@@ -53,13 +146,14 @@ const getContests = asyncHandler(async (req, res) => {
     } else if (now > contest.endTime) {
       status = "ended";
     } else {
-      status = running;
+      status = "running";
     }
 
     return {
       id: contest._id,
       name: contest.name,
       description: contest.description,
+      level: contest.level,
       startTime: contest.startTime,
       endTime: contest.endTime,
       status,
@@ -101,6 +195,7 @@ const getContestDetail = asyncHandler(async (req, res) => {
     id: contest._id,
     name: contest.name,
     description: contest.description,
+    level: contest.level,
     startTime: contest.startTime,
     endTime: contest.endTime,
     status,
@@ -123,19 +218,23 @@ const joinContest = asyncHandler(async (req, res) => {
     throw new apiError(400, "Invalid Contest ID");
   }
 
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new apiError(404, "User not found");
+  }
+
   const contest = await Contest.findById(id);
   if (!contest) {
     throw new apiError(404, "Contest not found");
   }
 
+  if (new Date() > new Date(contest.endTime)) {
+    throw new apiError(400, "Cannot join an ended contest");
+  }
+
   const alreadyJoined = contest.participants.some((u) => u.equals(userId));
   if (alreadyJoined) {
     throw new apiError(400, "User has already joined the contest");
-  }
-
-  const user = await User.findById(userId);
-  if (!user) {
-    throw new apiError(404, "User not found");
   }
 
   contest.participants.push(userId);
@@ -193,6 +292,7 @@ const getUserContests = asyncHandler(async (req, res) => {
     return {
       id: contest._id,
       name: contest.name,
+      level: contest.level,
       startTime: contest.startTime,
       endTime: contest.endTime,
       status,
@@ -212,9 +312,14 @@ const getContestLeaderboard = asyncHandler(async (req, res) => {
     throw new apiError(400, "Invalid Contest ID");
   }
   const contestId = new mongoose.Types.ObjectId(id);
-  const contestExits = await Contest.exists({ _id: contestId });
-  if (!contestExits) throw new apiError(404, "Contest not found");
-  const leaderboard = await Submission.aggregate([
+  const contest = await Contest.findById(contestId).populate(
+    "participants",
+    "username email score"
+  );
+
+  if (!contest) throw new apiError(404, "Contest not found");
+
+  const acceptedScores = await Submission.aggregate([
     {
       $match: {
         contest: contestId,
@@ -223,9 +328,20 @@ const getContestLeaderboard = asyncHandler(async (req, res) => {
     },
     {
       $group: {
-        _id: "$user",
-        totalScore: { $sum: "$pointsAwarded" },
-        lastAcceptedAt: { $min: "$createdAt" },
+        _id: {
+          user: "$user",
+          problem: "$problem",
+        },
+        problemScore: { $max: "$pointsAwarded" },
+        firstAcceptedAt: { $min: "$createdAt" },
+      },
+    },
+    {
+      $group: {
+        _id: "$_id.user",
+        totalScore: { $sum: "$problemScore" },
+        solvedCount: { $sum: 1 },
+        lastAcceptedAt: { $max: "$firstAcceptedAt" },
       },
     },
     {
@@ -250,19 +366,65 @@ const getContestLeaderboard = asyncHandler(async (req, res) => {
         username: "$user.username",
         email: "$user.email",
         totalScore: 1,
+        solvedCount: 1,
         lastAcceptedAt: 1,
       },
     },
     {
       $sort: {
         totalScore: -1,
+        solvedCount: -1,
         lastAcceptedAt: 1,
       },
     },
   ]);
+
+  const scoreByUserId = new Map(
+    acceptedScores.map((entry) => [String(entry.userId), entry])
+  );
+
+  const leaderboard = contest.participants
+    .map((participant) => {
+      const score = scoreByUserId.get(String(participant._id));
+
+      return {
+        userId: participant._id,
+        username: participant.username,
+        email: participant.email,
+        totalScore: score?.totalScore || 0,
+        solvedCount: score?.solvedCount || 0,
+        lastAcceptedAt: score?.lastAcceptedAt || null,
+      };
+    })
+    .sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      if (b.solvedCount !== a.solvedCount) return b.solvedCount - a.solvedCount;
+      if (!a.lastAcceptedAt && b.lastAcceptedAt) return 1;
+      if (a.lastAcceptedAt && !b.lastAcceptedAt) return -1;
+      if (!a.lastAcceptedAt && !b.lastAcceptedAt) {
+        return String(a.username).localeCompare(String(b.username));
+      }
+      return new Date(a.lastAcceptedAt) - new Date(b.lastAcceptedAt);
+    })
+    .map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+    }));
+
   return res
     .status(200)
-    .json(new apiResponse(200, leaderboard, "Contest leaderboard fetched"));
+    .json(
+      new apiResponse(
+        200,
+        {
+          contestId: contest._id,
+          contestName: contest.name,
+          totalParticipants: contest.participants.length,
+          leaderboard,
+        },
+        "Contest leaderboard fetched"
+      )
+    );
 });
 
 export {

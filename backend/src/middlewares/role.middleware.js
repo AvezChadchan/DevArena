@@ -6,7 +6,7 @@ export const authorizeRoles = (...allowedRoles) => {
       throw new apiError(401, "Unauthorized");
     }
     if (!allowedRoles.includes(req.user.role)) {
-      throw new apiError(403, "Fobidden: Access Denied");
+      throw new apiError(403, "Forbidden: Access Denied");
     }
     next();
   };
